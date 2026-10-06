@@ -1,7 +1,8 @@
 import 'exceptions.dart';
-import 'mixins.dart';
 
 enum RentalStatus { active, completed, cancelled }
+
+const Object _undefined = Object();
 
 abstract class Vehicle {
   final String id;
@@ -12,7 +13,11 @@ abstract class Vehicle {
     required this.id,
     required this.brand,
     required this.rentalRatePerDay,
-  });
+  }) {
+    if (rentalRatePerDay <= 0) {
+      throw RentalException('Harga sewa per hari harus lebih dari 0.');
+    }
+  }
 
   Map<String, dynamic> toJson();
 }
@@ -25,7 +30,11 @@ class Car extends Vehicle {
     required super.brand,
     required super.rentalRatePerDay,
     required this.seatingCapacity,
-  });
+  }) {
+    if (seatingCapacity <= 0) {
+      throw RentalException('Kapasitas tempat duduk harus lebih dari 0.');
+    }
+  }
 
   @override
   Map<String, dynamic> toJson() {
@@ -36,15 +45,6 @@ class Car extends Vehicle {
       'seatingCapacity': seatingCapacity,
     };
   }
-
-  factory Car.fromJson(Map<String, dynamic> json) {
-    return Car(
-      id: json['id'] as String,
-      brand: json['brand'] as String,
-      rentalRatePerDay: (json['rentalRatePerDay'] as num).toDouble(),
-      seatingCapacity: json['seatingCapacity'] as int,
-    );
-  }
 }
 
 class Customer {
@@ -52,7 +52,15 @@ class Customer {
   final String name;
   final String? phoneNumber;
 
-  Customer({required this.id, required this.name, this.phoneNumber});
+  Customer({
+    required this.id,
+    required this.name,
+    this.phoneNumber,
+  }) {
+    if (name.trim().isEmpty) {
+      throw RentalException('Nama pelanggan tidak boleh kosong.');
+    }
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -71,7 +79,7 @@ class Customer {
   }
 }
 
-class RentalOrder with Loggable {
+class RentalOrder {
   final String orderId;
   final Customer customer;
   final Vehicle vehicle;
@@ -102,7 +110,7 @@ class RentalOrder with Loggable {
     Vehicle? vehicle,
     int? durationDays,
     RentalStatus? status,
-    String? returnNotes,
+    Object? returnNotes = _undefined,
   }) {
     return RentalOrder(
       orderId: orderId ?? this.orderId,
@@ -110,7 +118,25 @@ class RentalOrder with Loggable {
       vehicle: vehicle ?? this.vehicle,
       durationDays: durationDays ?? this.durationDays,
       status: status ?? this.status,
-      returnNotes: returnNotes ?? this.returnNotes,
+      returnNotes: identical(returnNotes, _undefined)
+          ? this.returnNotes
+          : returnNotes as String?,
+    );
+  }
+
+  RentalOrder cancel({String? reason}) {
+    if (status == RentalStatus.completed) {
+      throw RentalException(
+        'Order $orderId yang sudah selesai tidak dapat dibatalkan.',
+      );
+    }
+    if (status == RentalStatus.cancelled) {
+      throw RentalException('Order $orderId sudah pernah dibatalkan.');
+    }
+
+    return copyWith(
+      status: RentalStatus.cancelled,
+      returnNotes: reason,
     );
   }
 
@@ -126,24 +152,22 @@ class RentalOrder with Loggable {
   }
 
   Future<RentalOrder> completeRentalAsync({String? notes}) async {
-    logAction('Memulai pemrosesan pengembalian kendaraan order: $orderId');
-    try {
-      if (status == RentalStatus.completed) {
-        throw RentalException('Order $orderId sudah pernah diselesaikan.');
-      }
-
-      await Future.delayed(const Duration(milliseconds: 600));
-
-      final updated = copyWith(
-        status: RentalStatus.completed,
-        returnNotes: notes,
+    if (status == RentalStatus.cancelled) {
+      throw RentalException(
+        'Order $orderId yang sudah dibatalkan tidak dapat diselesaikan.',
       );
-
-      logAction('Order $orderId berhasil ditutup.');
-      return updated;
-    } catch (e) {
-      logAction('Gagal memproses pengembalian order $orderId: $e');
-      rethrow;
     }
+    if (status == RentalStatus.completed) {
+      throw RentalException('Order $orderId sudah pernah diselesaikan.');
+    }
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    final updated = copyWith(
+      status: RentalStatus.completed,
+      returnNotes: notes,
+    );
+
+    return updated;
   }
 }

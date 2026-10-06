@@ -1,16 +1,32 @@
-# Domain Model: Rental Kendaraan
+Catatan singkat mengenai alasan dan keputusan desain di balik pembuatan sistem rental ini.
 
-## 1. Domain & Alasan Pemodelan
+1. Alasan Pemodelan Kelas
 
-Sistem ini memodelkan reservasi sewa kendaraan harian.
+Kenapa Car mewarisi Vehicle (Inheritance)?
+Secara logika, mobil adalah kendaraan. Kelas `Vehicle` dibuat sebagai kelas induk untuk menampung data dasar yang pasti dimiliki semua kendaraan (id, brand, tarif per hari, dan fungsi `toJson`). Sedangkan `Car` menambahkan hal yang spesifik untuk mobil, yaitu kapasitas penumpang. Jika nanti ingin menambah jenis kendaraan baru seperti motor atau truk, `RentalOrder` tidak perlu diubah karena sudah mengacu ke `Vehicle`.
 
-- **Relasi 3 Kelas**: Memisahkan entitas `Customer`, `Vehicle`, dan `RentalOrder`. `RentalOrder` menggunakan komposisi karena transaksi sewa _memiliki_ relasi terhadap penyewa dan kendaraan, bukan mewarisinya.
-- **Inheritance**: `Car` diturunkan dari kelas abstrak `Vehicle` untuk mewarisi identitas dan tarif sewa dasar serta menambahkan properti spesifik (`seatingCapacity`).
-- **Mixin (`Loggable`)**: Memberikan kemampuan audit pencatatan aktivitas transaksi tanpa mengikat hierarki pohon inheritance.
-- **Enum (`RentalStatus`)**: Membatasi status rental (`active`, `completed`, `cancelled`) agar bebas dari resiko salah ketik (_type-safe_).
-- **Null Safety**: Properti `phoneNumber` dan `returnNotes` diperbolehkan null (`?`) karena bersifat opsional saat transaksi pertama kali dibuat. Sebaliknya, `orderId` dan `durationDays` wajib non-nullable.
-- **Custom Exception (`RentalException`)**: Menolak instansiasi order berdurasi $\le 0$ hari dan melarang penyelesaian ganda pada transaksi yang sudah berstatus selesai.
+Kenapa RentalOrder memakai Komposisi?
+`RentalOrder` menghubungkan `Customer` dan `Vehicle`. Hubungannya adalah kepemilikan (order memiliki pelanggan dan memiliki kendaraan), bukan pewarisan. Order bertugas menghitung total biaya sewa dan mencatat status transaksi.
 
-## 2. Keputusan yang Sempat Diragukan
+Validasi Nilai (Mencegah Data Tidak Masuk Akal)
+Semua input dicek langsung saat objek dibuat: durasi minimal 1 hari, tarif sewa dan kapasitas kursi harus lebih dari 0, serta nama pelanggan tidak boleh kosong. Jika ada yang tidak valid, program langsung melempar `RentalException`.
 
-Sempat ragu apakah status ketersediaan (_availability_) harus ditempelkan langsung sebagai field `isAvailable` di dalam kelas `Vehicle`. Keputusan akhirnya adalah memisahkannya dari `Vehicle` dan menyerahkannya ke siklus hidup `RentalOrder`. Alasan: sebuah mobil secara fisik tetap ada dan tidak berubah identitasnya; yang menentukan ketersediaannya adalah ada/tidaknya transaksi `RentalOrder` yang berstatus `active` pada rentang tanggal tersebut.
+Alur Status Transaksi
+Status transaksi dibatasi lewat enum (`active`, `completed`, `cancelled`). Transisinya dijaga agar masuk akal: order yang sudah dibatalkan tidak boleh diselesaikan, dan order yang sudah selesai tidak bisa dibatalkan lagi.
+
+2.  Keputusan yang Sempat Dipertimbangkan
+
+Kenapa tidak memakai Mixin?  
+ Awalnya sempat terpikir memakai mixin untuk logging, tetapi sistem ini masih sederhana dan alurnya lurus. Menambahkan mixin hanya membuat kode lebih ramai tanpa kegunaan nyata.
+
+Kenapa menghapus Car.fromJson?
+Di `main.dart`, kita hanya mengembalikan objek `Customer` dari JSON. Karena `Car.fromJson` sama sekali tidak pernah dipanggil, fungsi ini dihapus agar tidak menjadi kode mati yang membingungkan.
+
+Penggunaan Future.delayed
+Jeda waktu pada `completeRentalAsync` sengaja dipertahankan untuk mensimulasikan proses asinkron nyata, seperti menunggu respons server atau penyimpanan data pengembalian.
+
+Ketersediaan Kendaraan
+Status ketersediaan tidak disimpan sebagai variabel di kelas `Vehicle`. Mobilnya sendiri tidak berubah secara fisik; ketersediaannya otomatis terlihat dari ada atau tidaknya `RentalOrder` yang sedang aktif untuk mobil tersebut.
+
+Catatan tentang copyWith
+Pada `RentalOrder`, `copyWith` diberi penanganan khusus agar nilai `returnNotes` bisa benar-benar dikosongkan (diubah jadi null) jika dibutuhkan, tanpa tertahan oleh nilai lama.
